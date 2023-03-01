@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
+import torch.nn.functional as F
 
 # Monte Carlo dropout calculation
 ###############################################################################
@@ -85,6 +86,7 @@ def define_G(input_nc, output_nc, ngf, which_model_netG, norm='batch', use_dropo
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % which_model_netG)
     return init_net(netG, init_type, init_gain, gpu_ids)
+
 
 
 def define_D(input_nc, ndf, which_model_netD,
@@ -250,8 +252,8 @@ class UnetGenerator(nn.Module):
 
         self.model = unet_block
 
-    def forward(self, input):
-        return self.model(input)
+    def forward(self, input, sample=False):
+        return self.model(input, sample)
 
 
 # Defines the submodule with skip connection.
@@ -259,7 +261,7 @@ class UnetGenerator(nn.Module):
 #   |-- downsampling -- |submodule| -- upsampling --|
 class UnetSkipConnectionBlock(nn.Module):
     def __init__(self, outer_nc, inner_nc, input_nc=None,
-                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False, p=0.5):
         super(UnetSkipConnectionBlock, self).__init__()
         self.outermost = outermost
         if type(norm_layer) == functools.partial:
@@ -303,11 +305,19 @@ class UnetSkipConnectionBlock(nn.Module):
 
         self.model = nn.Sequential(*model)
 
-    def forward(self, x):
+    def forward(self, x, sample=False):
         if self.outermost:
             return self.model(x)
         else:
-            return torch.cat([x, self.model(x)], 1)
+            if sample:
+                x_down = self.model[0](x)
+                x_skip = self.model[1](x_down)
+                x_sub = self.model[2](x_skip, sample)
+                x_up = self.model[3](x_sub)
+                return torch.cat([x_up, x_skip], 1)
+            else:
+                return torch.cat([self.model[3](self.model[2](self.model[1](self.model[0](x))),
+                                   x)], 1)
 
 
 # Defines the PatchGAN discriminator with the specified arguments.

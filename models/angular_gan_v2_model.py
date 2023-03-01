@@ -21,14 +21,18 @@ class AngularGANv2Model(BaseModel):
 
         return parser
 
+
     def initialize(self, opt):
         BaseModel.initialize(self, opt)
         self.isTrain = opt.isTrain
         # specify the training losses you want to print out. The program will call base_model.get_current_losses
-        self.loss_names = ['G_GAN',  'G_L1', 'G_Ang', 'D_real', 'D_fake']
+        self.loss_names = ['G_GAN',  'G_L1', 'G_Ang', 'D_real', 'D_fake','uncertainty_score']
         # specify the images you want to save/display. The program will call base_model.get_current_visuals
-        self.visual_names = ['real_A', 'fake_B', 'real_B']
+        self.visual_names = ['real_A', 'fake_B', 'real_B', 'illum_gt', 'illum_pred']
         # specify the models you want to save to the disk. The program will call base_model.save_networks and base_model.load_networks
+        
+        self.num_samples = 20
+
         if self.isTrain:
             self.model_names = ['G', 'D']
         else:  # during test time, only load Gs
@@ -59,6 +63,13 @@ class AngularGANv2Model(BaseModel):
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
 
+    def mc_dropout(self, x, model, num_samples):
+        model.eval()
+        with torch.no_grad():
+            y_hat = torch.stack([model(x, sample=True) for _ in range(num_samples)])
+        return y_hat.mean(0), y_hat.var(0)
+
+
     def set_input(self, input):
         AtoB = self.opt.which_direction == 'AtoB'
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
@@ -67,7 +78,10 @@ class AngularGANv2Model(BaseModel):
 
     def forward(self):
         self.fake_B = self.netG(self.real_A)
-
+        # Perform Monte Carlo Dropout during prediction
+        self.mean_fake_B, self.var_fake_B = self.mc_dropout(self.real_A, self.netG, self.num_samples)
+        self.uncertainty = self.var_fake_B.mean(dim=1, keepdim=True)
+        
     def backward_D(self):
         # Fake
         # stop backprop to the generator by detaching fake_B
