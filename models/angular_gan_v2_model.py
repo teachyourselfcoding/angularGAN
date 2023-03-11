@@ -21,26 +21,24 @@ class AngularGANv2Model(BaseModel):
 
         return parser
 
-
     def initialize(self, opt):
         BaseModel.initialize(self, opt)
         self.isTrain = opt.isTrain
         # specify the training losses you want to print out. The program will call base_model.get_current_losses
-        self.loss_names = ['G_GAN',  'G_L1', 'G_Ang', 'D_real', 'D_fake','uncertainty_score']
+        self.loss_names = ['G_GAN',  'G_L1', 'G_Ang', 'GT', 'D_real', 'D_fake']
         # specify the images you want to save/display. The program will call base_model.get_current_visuals
-        self.visual_names = ['real_A', 'fake_B', 'real_B', 'illum_gt', 'illum_pred']
+        self.visual_names = ['real_A', 'fake_B', 'real_B', 'loss_uncertainty']
         # specify the models you want to save to the disk. The program will call base_model.save_networks and base_model.load_networks
-        
-        self.num_samples = 20
-
         if self.isTrain:
             self.model_names = ['G', 'D']
         else:  # during test time, only load Gs
             self.model_names = ['G']
         # load/define networks
+        print(opt)
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf,
                                       opt.which_model_netG, opt.norm, not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
 
+        print(self.netG)
         if self.isTrain:
             use_sigmoid = opt.no_lsgan
             self.netD = networks.define_D(opt.input_nc + opt.output_nc, opt.ndf,
@@ -62,13 +60,27 @@ class AngularGANv2Model(BaseModel):
                                                 lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers.append(self.optimizer_G)
             self.optimizers.append(self.optimizer_D)
+    
+    def set_real_A(self, real_A):
+        self.real_A = real_A
 
-    def mc_dropout(self, x, model, num_samples):
+    def mc_dropout(self, x, model, num_mc_samples):
         model.eval()
         with torch.no_grad():
-            y_hat = torch.stack([model(x, sample=True) for _ in range(num_samples)])
+            y_hat = torch.stack([model(x, sample=True) for _ in range(num_mc_samples)])
         return y_hat.mean(0), y_hat.var(0)
-
+    
+    def EU_MAE_loss(self, input, target):
+        abs_diff = torch.abs(input - target)
+        L_MAE = torch.mean(abs_diff)
+        return L_MAE
+    
+    def EU_L1_loss(self, input, target, var=1.0):
+        var = torch.clamp(torch.tensor(var), min=0.001)
+        s = torch.log(var)
+        abs_diff = torch.abs(input-target)
+        L_EU = torch.mean(torch.norm(abs_diff,dim=(1),p=1)*torch.exp(-s)+var)
+        return L_EU
 
     def set_input(self, input):
         AtoB = self.opt.which_direction == 'AtoB'
@@ -76,12 +88,12 @@ class AngularGANv2Model(BaseModel):
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
+    
     def forward(self):
-        self.fake_B = self.netG(self.real_A)
-        # Perform Monte Carlo Dropout during prediction
-        self.mean_fake_B, self.var_fake_B = self.mc_dropout(self.real_A, self.netG, self.num_samples)
-        self.uncertainty = self.var_fake_B.mean(dim=1, keepdim=True)
+        self.G_output = self.netG(self.real_A)
+        self.fake_B, self.loss_uncertainty = torch.split(self.G_output, [3, 1], dim=1)
         
+
     def backward_D(self):
         # Fake
         # stop backprop to the generator by detaching fake_B
@@ -108,15 +120,18 @@ class AngularGANv2Model(BaseModel):
 
         # Second, G(A) = B
         self.eps = torch.tensor(1e-04).to(self.device)
-        self.loss_G_L1 = self.criterionL1(self.fake_B,   torch.div(self.real_A,  torch.max(self.real_B, self.eps))) * self.opt.lambda_L1 * 100
+        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1 * 100
 
         self.illum_gt = self.real_B
-        self.illum_pred = torch.div(self.real_A,  torch.max(self.fake_B, self.eps))
-        self.loss_G_Ang = self.criterionAngular(self.illum_gt, self.illum_pred) * self.opt.lambda_Angular
 
-        self.loss_G = self.loss_G_GAN + self.loss_G_Ang + self.loss_G_L1
+        self.loss_G_Ang = self.criterionAngular(self.illum_gt, self.fake_B) * self.opt.lambda_Angular
+        self.GT_fakeB_MAE = self.EU_MAE_loss(self.illum_gt, self.fake_B)
+        self.loss_GT = self.EU_L1_loss(self.GT_fakeB_MAE, self.loss_uncertainty.squeeze(1))
+
+        self.loss_G = self.loss_G_GAN + self.loss_G_Ang + self.loss_G_L1 +  self.loss_GT
 
         self.loss_G.backward()
+
 
     def optimize_parameters(self):
         self.forward()

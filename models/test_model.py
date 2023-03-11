@@ -1,6 +1,7 @@
 from .base_model import BaseModel
 from . import networks
 from .cycle_gan_model import CycleGANModel
+import torch
 
 
 class TestModel(BaseModel):
@@ -16,7 +17,7 @@ class TestModel(BaseModel):
         parser.add_argument('--model_suffix', type=str, default='',
                             help='In checkpoints_dir, [which_epoch]_net_G[model_suffix].pth will'
                             ' be loaded as the generator of TestModel')
-
+        parser.add_argument('--num_mc_samples')
         return parser
 
     def initialize(self, opt):
@@ -24,7 +25,7 @@ class TestModel(BaseModel):
         BaseModel.initialize(self, opt)
 
         # specify the training losses you want to print out. The program will call base_model.get_current_losses
-        self.loss_names = []
+        self.loss_names = ['uncertainty']
         # specify the images you want to save/display. The program will call base_model.get_current_visuals
         self.visual_names = ['real_A', 'fake_B']
         # specify the models you want to save to the disk. The program will call base_model.save_networks and base_model.load_networks
@@ -37,6 +38,14 @@ class TestModel(BaseModel):
         # please see BaseModel.load_networks
         setattr(self, 'netG' + opt.model_suffix, self.netG)
 
+    def mc_dropout(self, x, model, num_mc_samples):
+        model.eval()
+        with torch.no_grad():
+            y_hat = torch.stack([model(x) for _ in range(num_mc_samples)])
+        return y_hat.mean(0), y_hat.var(0)
+    
+
+    
     def set_input(self, input):
         # we need to use single_dataset mode
         self.real_A = input['A'].to(self.device)
@@ -44,3 +53,6 @@ class TestModel(BaseModel):
 
     def forward(self):
         self.fake_B = self.netG(self.real_A)
+        # Perform Monte Carlo Dropout during prediction
+        self.mean_fake_B, self.var_fake_B = self.mc_dropout(self.real_A, self.netG, self.num_samples)
+        self.uncertainty = self.var_fake_B.mean(dim=1, keepdim=True)

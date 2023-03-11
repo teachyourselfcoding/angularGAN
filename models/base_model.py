@@ -74,6 +74,8 @@ class BaseModel():
     # return visualization images. train.py will display these images, and save the images to a html
     def get_current_visuals(self):
         visual_ret = OrderedDict()
+        print('123123')
+        print(self.visual_names)
         for name in self.visual_names:
             if isinstance(name, str):
                 visual_ret[name] = getattr(self, name)

@@ -26,6 +26,8 @@ if __name__ == '__main__':
     for i, data in enumerate(dataset):
         if i >= opt.how_many:
             break
+        print("512312321313131")
+        print(data.keys())
         model.set_input(data)
         model.test()
         visuals = model.get_current_visuals()
@@ -37,3 +39,4 @@ if __name__ == '__main__':
         save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, width=opt.display_winsize)
 
     webpage.save()
+
