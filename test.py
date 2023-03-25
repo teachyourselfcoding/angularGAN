@@ -4,7 +4,7 @@ from data import CreateDataLoader
 from models import create_model
 from util.visualizer import save_images
 from util import html
-
+import numpy as np
 
 if __name__ == '__main__':
     opt = TestOptions().parse()
@@ -31,11 +31,18 @@ if __name__ == '__main__':
         model.set_input(data)
         model.test()
         visuals = model.get_current_visuals()
+        uncertainty = model.get_uncertainty_score().cpu()
         img_path = model.get_image_paths()
         print(img_path)
 
         if i % 5 == 0:
             print('processing (%04d)-th image... %s' % (i, img_path))
+        dir = webpage.get_image_dir()
+        output_file = os.path.join(dir, os.path.splitext(os.path.basename(img_path[0]))[0] + '.npy')
+        print("uncertainty is")
+        print(uncertainty)
+        uncertainty = uncertainty.cpu()
+        np.save(output_file, uncertainty)
         save_images(webpage, visuals, img_path, aspect_ratio=opt.aspect_ratio, width=opt.display_winsize)
 
     webpage.save()
