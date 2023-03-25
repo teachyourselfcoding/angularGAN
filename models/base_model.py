@@ -27,7 +27,7 @@ class BaseModel():
         self.model_names = []
         self.visual_names = []
         self.image_paths = []
-        self.uncertainty_score = 0
+        self.color_variance_loss = 0
 
     def set_input(self, input):
         self.input = input
@@ -80,8 +80,8 @@ class BaseModel():
                 visual_ret[name] = getattr(self, name)
         return visual_ret
 
-    def get_uncertainty_score(self):
-        return self.uncertainty_score
+    def get_color_variance_loss(self):
+        return self.color_variance_loss
 
 
     # return traning losses/errors. train.py will print out these errors as debugging information

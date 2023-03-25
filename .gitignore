@@ -1646,3 +1646,15 @@ util/__pycache__/image_pool.cpython-39.pyc
 util/__pycache__/util.cpython-39.pyc
 util/__pycache__/visualizer.cpython-39.pyc
 models/quasi/
+*.png
+checkpoints/nus8test/latest_net_G.pth
+*.pth
+*.txt
+*.pyc
+*.pyc
+models/__pycache__/angular_gan_v2_model.cpython-39.pyc
+checkpoints/nus8test/web/index.html
+*.pyc
+*.pyc
+*.pyc
+models/__pycache__/angular_gan_v2_model.cpython-39.pyc

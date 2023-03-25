@@ -1,5 +1,6 @@
 import torch
 from util.image_pool import ImagePool
+from util.processing import local_illuminant_loss
 from .base_model import BaseModel
 from . import networks
 from . import angular_loss
@@ -7,11 +8,10 @@ from . import angular_loss
 
 class AngularGANv2Model(BaseModel):
     def name(self):
-        return 'AngularGANModel'
+        return 'AngularGANv2Model'
 
     @staticmethod
     def modify_commandline_options(parser, is_train=True):
-
 
         parser.set_defaults(pool_size=0, no_lsgan=True, norm='batch')
         parser.set_defaults(dataset_mode='aligned')
@@ -25,9 +25,8 @@ class AngularGANv2Model(BaseModel):
     def initialize(self, opt):
         BaseModel.initialize(self, opt)
         self.isTrain = opt.isTrain
-        self.mc_dropout_samples = opt.num_dropout_samples
         # specify the training losses you want to print out. The program will call base_model.get_current_losses
-        self.loss_names = ['G_GAN', 'G_L1', 'G_Ang', 'D_real', 'D_fake']
+        self.loss_names = ['G_GAN',  'G_L1', 'G_Ang', 'D_real', 'D_fake']
         # specify the images you want to save/display. The program will call base_model.get_current_visuals
         self.visual_names = ['real_A', 'fake_B', 'real_B']
         # specify the models you want to save to the disk. The program will call base_model.save_networks and base_model.load_networks
@@ -36,7 +35,6 @@ class AngularGANv2Model(BaseModel):
         else:  # during test time, only load Gs
             self.model_names = ['G']
         # load/define networks
- 
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf,
                                       opt.which_model_netG, opt.norm, not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
 
@@ -72,13 +70,9 @@ class AngularGANv2Model(BaseModel):
         if self.isTrain:
             self.fake_B = self.netG(self.real_A)
         else:
-            outputs = []
-            for i in range(self.mc_dropout_samples):
-                output = self.netG(self.real_A)
-                outputs.append(output)
-            outputs = torch.stack(outputs, dim=0)
-            self.fake_B = torch.mean(outputs, dim=0)
-            self.uncertainty_score = torch.var(outputs, dim=0).mean()
+            self.fake_B = self.netG(self.real_A)
+            self.color_variance_loss = local_illuminant_loss(self.fake_B )
+
 
     def backward_D(self):
         # Fake
@@ -88,7 +82,8 @@ class AngularGANv2Model(BaseModel):
         self.loss_D_fake = self.criterionGAN(pred_fake, False)
 
         # Real
-        real_AB = torch.cat((self.real_A, self.real_B), 1)
+        self.eps = torch.tensor(1e-04).to(self.device)
+        real_AB = torch.cat((self.real_A, torch.div(self.real_A, torch.max(self.real_B, self.eps))), 1)
         pred_real = self.netD(real_AB)
         self.loss_D_real = self.criterionGAN(pred_real, True)
 
@@ -104,11 +99,11 @@ class AngularGANv2Model(BaseModel):
         self.loss_G_GAN = self.criterionGAN(pred_fake, True)
 
         # Second, G(A) = B
-        self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1 * 100
-        
         self.eps = torch.tensor(1e-04).to(self.device)
-        self.illum_gt = torch.div(self.real_A, torch.max(self.real_B, self.eps))
-        self.illum_pred = torch.div(self.real_A, torch.max(self.fake_B, self.eps))
+        self.loss_G_L1 = self.criterionL1(self.fake_B,   torch.div(self.real_A,  torch.max(self.real_B, self.eps))) * self.opt.lambda_L1 * 100
+
+        self.illum_gt = self.real_B
+        self.illum_pred = torch.div(self.real_A,  torch.max(self.fake_B, self.eps))
         self.loss_G_Ang = self.criterionAngular(self.illum_gt, self.illum_pred) * self.opt.lambda_Angular
 
         self.loss_G = self.loss_G_GAN + self.loss_G_Ang + self.loss_G_L1
