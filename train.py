@@ -3,12 +3,28 @@ from options.train_options import TrainOptions
 from data import CreateDataLoader
 from models import create_model
 from util.visualizer import Visualizer
+from collections import OrderedDict
 
-if __name__ == '__main__':
+def update_teacher_model(student_model, teacher_model, keep_rate=0.9996):
+    student_model_dict = student_model.state_dict()
+    teacher_model_dict = teacher_model.state_dict()
+    
+    new_teacher_dict = OrderedDict()
+    for key, value in teacher_model_dict.items():
+        if key in student_model_dict.keys():
+            new_teacher_dict[key] = (
+                student_model_dict[key] * (1 - keep_rate) + value * keep_rate
+            )
+        else:
+            raise Exception("{} is not found in student model".format(key))
+
+    teacher_model.load_state_dict(new_teacher_dict)
+
+def main():
     opt = TrainOptions().parse()
     data_loader = CreateDataLoader(opt)
     dataset = data_loader.load_data()
-    dataset_size = len(data_loader)
+    dataset_size = len(data_loader) a
     print('#training images = %d' % dataset_size)
 
     model = create_model(opt)
@@ -57,3 +73,6 @@ if __name__ == '__main__':
         print('End of epoch %d / %d \t Time Taken: %d sec' %
               (epoch, opt.niter + opt.niter_decay, time.time() - epoch_start_time))
         model.update_learning_rate()
+
+if __name__ == '__main__':
+    main()

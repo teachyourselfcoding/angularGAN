@@ -24,5 +24,6 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--lr_policy', type=str, default='lambda', help='learning rate policy: lambda|step|plateau')
         parser.add_argument('--lr_decay_iters', type=int, default=50, help='multiply by a gamma every lr_decay_iters iterations')
 
+        parser.add_argument('--teacher_train_iter', type=int, default=200, help='numbers of teacher iteration after initialisation of network ')
         self.isTrain = True
         return parser
