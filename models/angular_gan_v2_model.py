@@ -34,7 +34,7 @@ class AngularGANv2Model(BaseModel):
         else:  # during test time, only load Gs
             self.model_names = ['G']
         # load/define networks
-        print(opt)
+
         self.netG = networks.define_G(opt.input_nc, opt.output_nc, opt.ngf,
                                       opt.which_model_netG, opt.norm, not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
 
@@ -64,6 +64,9 @@ class AngularGANv2Model(BaseModel):
     def set_real_A(self, real_A):
         self.real_A = real_A
 
+    def get_confidence(self):
+        return self.confidence_score
+    
     def mc_dropout(self, x, model, num_mc_samples):
         model.eval()
         with torch.no_grad():
@@ -87,13 +90,16 @@ class AngularGANv2Model(BaseModel):
         self.real_A = input['A' if AtoB else 'B'].to(self.device)
         self.real_B = input['B' if AtoB else 'A'].to(self.device)
         self.image_paths = input['A_paths' if AtoB else 'B_paths']
-
+        
     
     def forward(self):
-        self.G_output = self.netG(self.real_A)
-        self.fake_B, self.loss_uncertainty = torch.split(self.G_output, [3, 1], dim=1)
-        
-
+        if self.isTrain:
+            self.G_output = self.netG(self.real_A)
+            self.fake_B, self.loss_uncertainty = torch.split(self.G_output, [3, 1], dim=1)
+        else:
+            self.fake_B, self.loss_uncertainty = torch.split(self.G_output, [3, 1], dim=1)
+            self.mean_uncertainty = torch.mean(self.loss_uncertainty)
+            self.confidence_score = 1 / self.mean_uncertainty
     def backward_D(self):
         # Fake
         # stop backprop to the generator by detaching fake_B

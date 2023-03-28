@@ -22,17 +22,17 @@ if __name__ == '__main__':
     webpage = html.HTML(web_dir, 'Experiment = %s, Phase = %s, Epoch = %s' % (opt.name, opt.phase, opt.which_epoch))
     # test
     print(web_dir )
-    print(webpage)
+    print(webpage)/
     for i, data in enumerate(dataset):
         if i >= opt.how_many:
             break
-        print("512312321313131")
-        print(data.keys())
         model.set_input(data)
         model.test()
         visuals = model.get_current_visuals()
         img_path = model.get_image_paths()
         print(img_path)
+        print("confidence")
+        print(model.get_confidence())
 
         if i % 5 == 0:
             print('processing (%04d)-th image... %s' % (i, img_path))

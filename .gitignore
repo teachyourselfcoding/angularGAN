@@ -1646,3 +1646,7 @@ util/__pycache__/image_pool.cpython-39.pyc
 util/__pycache__/util.cpython-39.pyc
 util/__pycache__/visualizer.cpython-39.pyc
 models/quasi/
+*.pth
+*.png
+*.txt
+*.pyc
